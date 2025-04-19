@@ -1,6 +1,7 @@
-package keycloak
+package smoke
 
 import (
+	"io"
 	"testing"
 
 	"github.com/oauth2-proxy/e2e/internal/pages"
@@ -14,9 +15,9 @@ var (
 	bm *utils.BrowserManager
 )
 
-func TestKeycloakSuite(t *testing.T) {
+func TestOIDCLogin(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Keycloak Test Suite")
+	RunSpecs(t, "OIDC Login Smoke Test")
 }
 
 var _ = BeforeSuite(func() {
@@ -29,7 +30,7 @@ var _ = AfterSuite(func() {
 	Expect(bm.Close()).To(Succeed())
 })
 
-var _ = Describe("Login Flow", func() {
+var _ = Describe("OIDC Login Flow", func() {
 	var (
 		context pw.BrowserContext
 		page    pw.Page
@@ -45,11 +46,22 @@ var _ = Describe("Login Flow", func() {
 		Expect(context.Close()).To(Succeed())
 	})
 
-	It("should authenticate", func() {
+	It("should authenticate via Dex", func(ctx SpecContext) {
+		container, err := utils.CreateContainer(ctx, "configs/basic.cfg", []string{"01_smoke_dex", "01_smoke_upstream"})
+		logs, err := container.Logs(ctx)
+		if err == nil {
+			defer logs.Close()
+			GinkgoWriter.Println("\n=== Container Logs ===")
+			_, _ = io.Copy(GinkgoWriter, logs)
+			GinkgoWriter.Println("=====================")
+		}
+		Expect(err).NotTo(HaveOccurred(), "Couldn't create container")
+		defer container.Terminate(ctx)
+
 		baseUrl := "http://oauth2-proxy.localtest.me:4180"
 
-		pages.NewProviderButtonPage(page, baseUrl, "Keycloak").SignIn()
-		pages.KeycloakLogin(page, "admin@example.com", "password")
+		pages.NewProviderButtonPage(page, baseUrl, "Dex").SignIn()
+		pages.DexLogin(page, "admin@example.com", "password")
 
 		httpbin := pages.NewHttpbinPage(page, baseUrl)
 		headers := httpbin.GetHeaders()

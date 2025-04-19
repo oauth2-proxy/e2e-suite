@@ -3,7 +3,7 @@
 case "$1" in
   up)
     docker-compose up --detach --wait --wait-timeout 120
-    sleep 5
+    sleep 10
     ;;
   down)
     docker-compose down
