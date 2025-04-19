@@ -19,7 +19,7 @@ func (p *ProviderButtonPage) SignIn() {
 	_, err := p.page.Goto(p.baseUrl)
 	Expect(err).ToNot(HaveOccurred(), "Provider button page not loading")
 
-	btn := p.page.Locator("button", pw.PageLocatorOptions{HasText: "Sign in with Dex"})
+	btn := p.page.Locator("button", pw.PageLocatorOptions{HasText: "Sign in with " + p.providerName})
 
 	err = btn.Click()
 	Expect(err).NotTo(HaveOccurred(), "Provider button wasn't found")

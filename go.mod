@@ -1,6 +1,12 @@
 module github.com/oauth2-proxy/e2e
 
-go 1.23.7
+go 1.24
+
+require (
+	github.com/onsi/ginkgo/v2 v2.23.4
+	github.com/onsi/gomega v1.37.0
+	github.com/playwright-community/playwright-go v0.5101.0
+)
 
 require (
 	github.com/deckarep/golang-set/v2 v2.8.0 // indirect
@@ -10,9 +16,6 @@ require (
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/pprof v0.0.0-20250418163039-24c5476c6587 // indirect
-	github.com/onsi/ginkgo/v2 v2.23.4 // indirect
-	github.com/onsi/gomega v1.37.0 // indirect
-	github.com/playwright-community/playwright-go v0.5101.0 // indirect
 	go.uber.org/automaxprocs v1.6.0 // indirect
 	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/sys v0.32.0 // indirect

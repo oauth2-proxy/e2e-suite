@@ -2,7 +2,7 @@
 
 case "$1" in
   up)
-    docker-compose up -d
+    docker-compose up --detach --wait --wait-timeout 120
     sleep 5
     ;;
   down)

@@ -1,4 +1,4 @@
-package smoke
+package keycloak
 
 import (
 	"testing"
@@ -14,9 +14,9 @@ var (
 	bm *utils.BrowserManager
 )
 
-func TestOIDCLogin(t *testing.T) {
+func TestKeycloakSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "OIDC Login Smoke Tests")
+	RunSpecs(t, "Keycloak Test Suite")
 }
 
 var _ = BeforeSuite(func() {
@@ -29,7 +29,7 @@ var _ = AfterSuite(func() {
 	Expect(bm.Close()).To(Succeed())
 })
 
-var _ = Describe("OIDC Login Flow", func() {
+var _ = Describe("Login Flow", func() {
 	var (
 		context pw.BrowserContext
 		page    pw.Page
@@ -45,11 +45,11 @@ var _ = Describe("OIDC Login Flow", func() {
 		Expect(context.Close()).To(Succeed())
 	})
 
-	It("should authenticate via Dex", func() {
+	It("should authenticate", func() {
 		baseUrl := "http://oauth2-proxy.localtest.me:4180"
 
-		pages.NewProviderButtonPage(page, baseUrl, "Dex").SignIn()
-		pages.DexLogin(page, "admin@example.com", "password")
+		pages.NewProviderButtonPage(page, baseUrl, "Keycloak").SignIn()
+		pages.KeycloakLogin(page, "admin@example.com", "password")
 
 		httpbin := pages.NewHttpbinPage(page, baseUrl)
 		headers := httpbin.GetHeaders()

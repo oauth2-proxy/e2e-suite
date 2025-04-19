@@ -1,6 +1,9 @@
 package utils
 
 import (
+	"os"
+	"strconv"
+
 	"github.com/playwright-community/playwright-go"
 )
 
@@ -16,7 +19,7 @@ func NewBrowserManager() (*BrowserManager, error) {
 	}
 
 	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(false),
+		Headless: playwright.Bool(getHeadless()),
 	})
 	if err != nil {
 		return nil, err
@@ -35,6 +38,7 @@ func (bm *BrowserManager) NewTestContext() (playwright.BrowserContext, playwrigh
 	}
 
 	page, err := context.NewPage()
+	page.SetDefaultTimeout(10000)
 	return context, page, err
 }
 
@@ -43,4 +47,18 @@ func (bm *BrowserManager) Close() error {
 		return err
 	}
 	return bm.pw.Stop()
+}
+
+func getHeadless() bool {
+	val := os.Getenv("BROWSER_HEADLESS")
+	if val == "" {
+		return true
+	}
+
+	// Parse as boolean (accepts "false", "true", "0", "1", "t", "yes", "y", etc.)
+	b, err := strconv.ParseBool(val)
+	if err != nil {
+		return true
+	}
+	return b
 }

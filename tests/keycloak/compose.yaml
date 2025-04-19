@@ -1,0 +1,63 @@
+services:
+  oauth2-proxy:
+    pull_policy: never
+    image: quay.io/oauth2-proxy/oauth2-proxy:latest
+    command: --config /oauth2-proxy.cfg
+    hostname: oauth2-proxy
+    volumes:
+      - "./oauth2-proxy.cfg:/oauth2-proxy.cfg"
+    restart: unless-stopped
+    ports:
+      - 4180:4180/tcp
+    networks:
+      keycloak: {}
+      upstream: {}
+    depends_on:
+      - keycloak
+      - upstream
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    command:
+      - "start-dev"
+      - "--http-port=9080"
+      - "--health-enabled=true"
+      - "--import-realm"
+    volumes:
+      - ./realm:/opt/keycloak/data/import
+    environment:
+      KC_HTTP_PORT: 9080
+      KEYCLOAK_ADMIN: admin@example.com
+      KEYCLOAK_ADMIN_PASSWORD: password
+    ports:
+      - 9080:9080/tcp
+    networks:
+      keycloak:
+        aliases:
+          - keycloak.localtest.me
+
+  wait-for-keycloak:
+    image: alpine
+    command:
+      - "tail"
+      - "-f"
+      - "/dev/null"
+    healthcheck:
+      test:
+        ["CMD", "wget", "-q", "--spider", "http://keycloak:9000/health/ready"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+    depends_on:
+      - keycloak
+    networks:
+      keycloak:
+
+  upstream:
+    image: kennethreitz/httpbin:latest
+    networks:
+      upstream:
+
+networks:
+  keycloak: {}
+  upstream: {}
