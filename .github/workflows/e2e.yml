@@ -4,37 +4,53 @@ name: E2E
 on: workflow_call
 
 jobs:
-  e2e:
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-    runs-on: ubuntu-latest
+  prepare:
     # https://docs.github.com/en/graphql/reference/enums#commentauthorassociation
     if: |
       github.event.issue.pull_request && 
       (github.event.comment.author_association == 'MEMBER' ||
        github.event.comment.author_association == 'OWNER') &&
       startsWith(github.event.comment.body, '/e2e')
+    name: Prepare
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+      issues: read
+      pull-requests: read
+    outputs:
+      status_sha: ${{ steps.status.outputs.status_sha }}
+      mode: ${{ steps.origin.outputs.mode }}
+      branch: ${{ steps.origin.outputs.branch || '' }}
+      pr_number: ${{ steps.origin.outputs.pr_number || '' }}
     steps:
-      - name: Start E2E review process
-        uses: actions/github-script@v7
-        id: review
+      - name: Add status to PR
+        id: status
+        uses: actions/github-script@v6
         with:
           script: |
-            const review = await github.rest.pulls.createReview({
+            try {
+              const sha = ${{ github.event.issue.number }} ? 
+                (await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: ${{ github.event.issue.number }}
+                })).data.head.sha : 
+                context.sha;
+
+              await github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                pull_number: ${{ github.event.issue.number }},
-                event: 'REQUEST_CHANGES',
-                body: "⏳ E2E tests are running... [View progress](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+                sha: sha,
+                state: 'pending',
+                context: 'E2E Tests',
+                target_url: 'https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}',
+                description: '⏳ E2E tests running...'
               });
-            core.setOutput('review_id', review.data.id);
 
-      - name: Checkout PR
-        uses: actions/checkout@v4
-        with:
-          ref: refs/pull/${{ github.event.issue.number }}/merge
+              core.setOutput('status_sha', sha);
+            } catch (error) {
+              core.setFailed(`Failed to set status: ${error.message}`);
+            }
 
       - name: Determine checkout origin
         id: origin
@@ -52,116 +68,163 @@ jobs:
             echo "mode=default" >> $GITHUB_OUTPUT
           fi
 
+  build-test-image:
+    name: Build test image
+    runs-on: ubuntu-latest
+    needs: prepare
+    outputs:
+      image-digest: ${{ steps.get-digest.outputs.digest }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ github.event.issue.number }}/merge
+
+      - name: Build image
+        run: |
+          make docker-local
+          docker save -o e2e-image.tar quay.io/oauth2-proxy/oauth2-proxy:latest
+
+      - name: Get image digest
+        id: get-digest
+        run: |
+          digest=$(docker inspect --format='{{.Id}}' quay.io/oauth2-proxy/oauth2-proxy:latest)
+          echo "digest=$digest" >> $GITHUB_OUTPUT
+
+      - name: Upload image
+        uses: actions/upload-artifact@v4
+        with:
+          name: oauth2-proxy-e2e-image
+          path: ./e2e-image.tar
+          retention-days: 1
+
+  run-e2e:
+    name: E2E tests
+    needs:
+      - prepare
+      - build-test-image
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test-suite:
+          - 01_smoke
+          - 02_keycloak
+
+    steps:
+      - name: Fetch test image
+        uses: actions/download-artifact@v4
+        with:
+          name: oauth2-proxy-e2e-image
+
+      - name: Load image
+        run: |
+          docker load -i e2e-image.tar
+
+      - name: Verify image
+        run: |
+          docker image inspect quay.io/oauth2-proxy/oauth2-proxy:latest
+          # Verify the digest matches the built image
+          current_digest=$(docker inspect --format='{{.Id}}' quay.io/oauth2-proxy/oauth2-proxy:latest)
+          if [ "$current_digest" != "${{ needs.build-test-image.outputs.image-digest }}" ]; then
+            echo "Image digest mismatch!"
+            exit 1
+          fi
+
       - name: Checkout e2e tests (main)
-        if: steps.origin.outputs.mode == 'default'
+        if: needs.prepare.outputs.mode == 'default'
         uses: actions/checkout@v4
         with:
           repository: tuunit/oauth2-proxy-e2e
-          path: e2e
 
       - name: Checkout e2e tests (branch)
-        if: steps.origin.outputs.mode == 'branch'
+        if: needs.prepare.outputs.mode == 'branch'
         uses: actions/checkout@v4
         with:
           repository: tuunit/oauth2-proxy-e2e
-          ref: ${{ steps.origin.outputs.branch }}
-          path: e2e
+          ref: ${{ needs.prepare.outputs.branch }}
 
       - name: Checkout e2e tests (PR)
-        if: steps.origin.outputs.mode == 'pr'
+        if: needs.prepare.outputs.mode == 'pr'
         uses: actions/checkout@v4
         with:
           repository: tuunit/oauth2-proxy-e2e
-          ref: refs/pull/${{ steps.origin.outputs.pr_number }}/merge
-          path: e2e
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+          ref: refs/pull/${{ needs.prepare.outputs.pr_number }}/merge
 
       - name: Set up Docker Compose
         uses: docker/setup-compose-action@v1
 
-      - name: Build oauth2-proxy docker test image
-        run: |
-          make docker
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: e2e/go.mod
+          go-version-file: go.mod
 
-      - name: Cache Go dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: e2e-deps-${{ hashFiles('e2e/go.sum') }}
-
-      - name: Dependencies
+      - name: Install Playwright dependencies
         run: go run github.com/playwright-community/playwright-go/cmd/playwright@latest install --with-deps chromium
 
       - name: E2E Testing
         run: |
-          cd e2e
-          make test-all
-        continue-on-error: true
-        id: results
+          make test-${{ matrix.test-suite }}
 
-      - name: Update PR with E2E test results
-        if: always()
+  status-update:
+    name: Status update
+    runs-on: ubuntu-latest
+    if: |
+      github.event.issue.pull_request && 
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER') &&
+      startsWith(github.event.comment.body, '/e2e') && always()
+    needs:
+      - prepare
+      - run-e2e
+    permissions:
+      statuses: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Write E2E test results to PR
         uses: actions/github-script@v7
         with:
           script: |
-            const { data: pr } = await github.rest.pulls.get({
+            const conclusion = "${{ needs.run-e2e.result }}" === 'success';
+            const label = conclusion ? 'e2e/passed' : 'e2e/failed';
+
+            await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: ${{ github.event.issue.number }}
+              sha: '${{ needs.prepare.outputs.status_sha }}',
+              state: conclusion ? 'success' : 'failure',
+              context: 'E2E Tests',
+              target_url: 'https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}',
+              description: conclusion ? '✅ E2E tests passed' : '❌ E2E tests failed'
             });
-
-            const success = "${{ steps.results.outcome }}" === 'success';
-            const label = success ? 'e2e/passed' : 'e2e/failed';
-
-            if (success) {
-              await github.rest.pulls.dismissReview({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: ${{ github.event.issue.number }},
-                review_id: "${{ steps.review.outputs.review_id }}",
-                message: "✅ E2E tests passed [View details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-              });
-            } else {
-              await github.rest.pulls.updateReview({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: ${{ github.event.issue.number }},
-                review_id: "${{ steps.review.outputs.review_id }}",
-                body: "❌ E2E tests failed [View details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})",
-              });
-            }
 
             try {
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: ${{ github.event.issue.number }},
+                issue_number: '${{ github.event.issue.number }}',
                 labels: [label]
               });
               
-              const oppositeLabel = success ? 'e2e/failed' : 'e2e/passed';
+              const oppositeLabel = conclusion ? 'e2e/failed' : 'e2e/passed';
               await github.rest.issues.removeLabel({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: ${{ github.event.issue.number }},
+                issue_number: '${{ github.event.issue.number }}',
                 name: oppositeLabel
               }).catch(() => {
-                // Ignore if label doesn't exist
+                // Ignore if label doesnt exist
               });
             } catch (error) {
               core.warning(`Failed to update labels: ${error}`);
             }
 
             // Fail the job if tests failed
-            if (!success) {
+            if (!conclusion) {
               core.setFailed('E2E tests failed');
             }
