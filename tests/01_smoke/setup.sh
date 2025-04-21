@@ -2,11 +2,11 @@
 
 case "$1" in
   up)
-    docker-compose up -d
+    docker compose up -d
     sleep 5
     ;;
   down)
-    docker-compose down
+    docker compose down
     ;;
   *)
     echo "Usage: $0 {up|down}"
