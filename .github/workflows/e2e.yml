@@ -1,0 +1,156 @@
+name: E2E
+
+# Reusuable workflow to be called from within the oauth2-proxy source repository
+on: workflow_call
+
+jobs:
+  e2e:
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    # https://docs.github.com/en/graphql/reference/enums#commentauthorassociation
+    if: |
+      github.event.issue.pull_request && 
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER') &&
+      startsWith(github.event.comment.body, '/e2e')
+    steps:
+      - name: Start E2E review process
+        uses: actions/github-script@v7
+        id: review
+        with:
+          script: |
+            const review = await github.rest.pulls.createReview({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: ${{ github.event.issue.number }},
+                event: 'REQUEST_CHANGES',
+                body: "⏳ E2E tests are running... [View progress](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+              });
+            core.setOutput('review_id', review.data.id);
+
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ github.event.issue.number }}/merge
+
+      - name: Determine checkout origin
+        id: origin
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          if [[ "$COMMENT" == "/e2e PR-"* && "$COMMENT" =~ PR-([0-9]+) ]]; then
+            PR_NUMBER="${BASH_REMATCH[1]}"
+            echo "mode=pr" >> $GITHUB_OUTPUT
+            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          elif [[ "$COMMENT" == "/e2e "* ]]; then
+            BRANCH=${COMMENT#/e2e }
+            echo "mode=branch" >> $GITHUB_OUTPUT
+            echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          else
+            echo "mode=default" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout e2e tests (main)
+        if: steps.origin.outputs.mode == 'default'
+        uses: actions/checkout@v4
+        with:
+          repository: tuunit/oauth2-proxy-e2e
+          path: e2e
+
+      - name: Checkout e2e tests (branch)
+        if: steps.origin.outputs.mode == 'branch'
+        uses: actions/checkout@v4
+        with:
+          repository: tuunit/oauth2-proxy-e2e
+          ref: ${{ steps.origin.outputs.branch }}
+          path: e2e
+
+      - name: Checkout e2e tests (PR)
+        if: steps.origin.outputs.mode == 'pr'
+        uses: actions/checkout@v4
+        with:
+          repository: tuunit/oauth2-proxy-e2e
+          ref: refs/pull/${{ steps.origin.outputs.pr_number }}/merge
+          path: e2e
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: e2e/go.mod
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build oauth2-proxy docker test image
+        run: |
+          make docker
+
+      - name: Dependencies
+        run: go run github.com/playwright-community/playwright-go/cmd/playwright@latest install --with-deps chromium
+
+      - name: E2E Testing
+        run: |
+          cd e2e
+          make test-all
+        continue-on-error: true
+        id: results
+
+      - name: Update PR with E2E test results
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: ${{ github.event.issue.number }}
+            });
+
+            const success = "${{ steps.results.outcome }}" === 'success';
+            const label = success ? 'e2e/passed' : 'e2e/failed';
+
+            if (success) {
+              await github.rest.pulls.dismissReview({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: ${{ github.event.issue.number }},
+                review_id: "${{ steps.review.outputs.review_id }}",
+                message: "✅ E2E tests passed [View details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+              });
+            } else {
+              await github.rest.pulls.updateReview({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: ${{ github.event.issue.number }},
+                review_id: "${{ steps.review.outputs.review_id }}",
+                body: "❌ E2E tests failed [View details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})",
+              });
+            }
+
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: ${{ github.event.issue.number }},
+                labels: [label]
+              });
+              
+              const oppositeLabel = success ? 'e2e/failed' : 'e2e/passed';
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: ${{ github.event.issue.number }},
+                name: oppositeLabel
+              }).catch(() => {
+                // Ignore if label doesn't exist
+              });
+            } catch (error) {
+              core.warning(`Failed to update labels: ${error}`);
+            }
+
+            // Fail the job if tests failed
+            if (!success) {
+              core.setFailed('E2E tests failed');
+            }
