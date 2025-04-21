@@ -1,0 +1,40 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - 8080:8080/tcp
+    volumes:
+      - "./nginx.conf:/etc/nginx/conf.d/default.conf"
+    networks:
+      app: {}
+  dex:
+    image: ghcr.io/dexidp/dex:v2.42.0
+    command: dex serve /dex.yaml
+    hostname: dex
+    volumes:
+      - "./dex.yaml:/dex.yaml"
+    restart: unless-stopped
+    ports:
+      - 4190:4190/tcp
+    networks:
+      app:
+        aliases:
+          - dex.localtest.me
+      etcd: {}
+    depends_on:
+      - etcd
+  etcd:
+    image: gcr.io/etcd-development/etcd:v3.5.21
+    entrypoint: /usr/local/bin/etcd
+    command:
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd:2379
+    networks:
+      etcd: {}
+  upstream:
+    image: kennethreitz/httpbin
+    networks:
+      app:
+networks:
+  app: {}
+  etcd: {}

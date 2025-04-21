@@ -48,13 +48,6 @@ var _ = Describe("OIDC Login Flow", func() {
 
 	It("should authenticate via Dex", func(ctx SpecContext) {
 		container, err := utils.CreateContainer(ctx, "configs/basic.cfg", []string{"01_smoke_dex", "01_smoke_upstream"})
-		logs, err := container.Logs(ctx)
-		if err == nil {
-			defer logs.Close()
-			GinkgoWriter.Println("\n=== Container Logs ===")
-			_, _ = io.Copy(GinkgoWriter, logs)
-			GinkgoWriter.Println("=====================")
-		}
 		Expect(err).NotTo(HaveOccurred(), "Couldn't create container")
 		defer container.Terminate(ctx)
 
