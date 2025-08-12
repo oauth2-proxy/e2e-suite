@@ -1,6 +1,6 @@
-# OAuth2 Proxy End-to-End Tests
+# OAuth2 Proxy End-to-End Test Suite
 
-This repository contains end-to-end tests for OAuth2 Proxy, verifying authentication flows with different identity providers like (Dex, Keycloak) or the integration with different environments and loadbalancers like nginx, traefik, istio, etc.
+This repository contains end-to-end tests for OAuth2 Proxy, verifying authentication flows with different identity providers like (Dex, Keycloak) or the integration with different environments and loadbalancers and mesh systems like nginx, traefik, istio, etc.
 
 ## Project Structure
 
@@ -28,7 +28,7 @@ This repository contains end-to-end tests for OAuth2 Proxy, verifying authentica
 - Kind (for local Kubernetes testing)
 - Helm (for Kubernetes dependencies)
 
-## Running Tests
+## Running Test locally
 
 ```sh
 # Run all tests
@@ -46,6 +46,23 @@ cd tests/01_smoke/
 # After you are done. Don't forget to cleanup
 ./setup.sh down
 ```
+
+## Running Test workflow
+
+Currently the e2e test suite is only triggered on demand by the maintainers of oauth2-proxy and can be triggered from within PRs in the upstream [oauth2-proxy repository](https://github.com/oauth2-proxy/oauth2-proxy) by writing comments.
+
+
+### How to trigger?
+
+If you are a maintainer / member of the [oauth2-proxy organization](https://github.com/oauth2-proxy), you can simple write a comment with the content `/e2e` on any PR which will automatically trigger the necessary workflow from within the PR. Which builds a temporary version of oauth2-proxy using the contents of the PR, and execute the test cases against it. Furthermore it attaches a commit status and labels to the PR.
+
+
+| Commands             | Description                                                                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/e2e`               | Executes the tests from the main branch of the e2e test suite repository.                                                                          |
+| `/e2e <branch-name>` | Executes the tests from a custom branch of the e2e test suite repository.                                                                          |
+| `/e2e PR-<number>`   | Executes the tests from an open PR of the e2e test suite repository. (Useful if new test cases are being added while an upstream PR is still open) |
+
 
 ## Contribution Guide
 

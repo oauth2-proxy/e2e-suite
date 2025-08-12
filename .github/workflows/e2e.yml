@@ -139,20 +139,20 @@ jobs:
         if: needs.prepare.outputs.mode == 'default'
         uses: actions/checkout@v4
         with:
-          repository: tuunit/oauth2-proxy-e2e
+          repository: oauth2-proxy/e2e-suite
 
       - name: Checkout e2e tests (branch)
         if: needs.prepare.outputs.mode == 'branch'
         uses: actions/checkout@v4
         with:
-          repository: tuunit/oauth2-proxy-e2e
+          repository: oauth2-proxy/e2e-suite
           ref: ${{ needs.prepare.outputs.branch }}
 
       - name: Checkout e2e tests (PR)
         if: needs.prepare.outputs.mode == 'pr'
         uses: actions/checkout@v4
         with:
-          repository: tuunit/oauth2-proxy-e2e
+          repository: oauth2-proxy/e2e-suite
           ref: refs/pull/${{ needs.prepare.outputs.pr_number }}/merge
 
       - name: Set up Docker Compose
