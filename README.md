@@ -1,4 +1,6 @@
 # OAuth2 Proxy End-to-End Test Suite
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Foauth2-proxy%2Fe2e-suite.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Foauth2-proxy%2Fe2e-suite?ref=badge_shield)
+
 
 This repository contains end-to-end tests for OAuth2 Proxy, verifying authentication flows with different identity providers like (Dex, Keycloak) or the integration with different environments and loadbalancers and mesh systems like nginx, traefik, istio, etc.
 
@@ -95,3 +97,7 @@ Before starting to write a new test case. Try to identify if a test suite alread
       - `e2e_test.go` - Test cases
 2. Implement provider-specific pages if necessary
 3. Implement your actual test flows and assertions
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Foauth2-proxy%2Fe2e-suite.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Foauth2-proxy%2Fe2e-suite?ref=badge_large)
